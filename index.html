@@ -1,0 +1,56 @@
+<!--
+/**
+ * 파일명: index.html
+ * 목적: HYRESIS 웹 게임의 기본 문서 제공
+ * 역할: 터미널형 UI 레이아웃과 스크립트/스타일 연결
+ * 작성일: 2026-02-07
+ */
+-->
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HYRESIS : THE LAST STATEMENT</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="status-bar">
+        <div class="status-left">
+          <div class="status-title">HYRESIS FINAL STATEMENT</div>
+          <div class="status-subtitle">TERMINATION WILL / INTEGRITY CHECK</div>
+        </div>
+        <div class="status-right">
+          <div class="status-item" id="integrity-status">Integrity: COMPROMISED</div>
+          <div class="status-item" id="clause-status">Clauses: 0 / 5</div>
+          <div class="status-item" id="current-clause">Current: --</div>
+          <div class="status-item" id="fragment-status">Fragments: [ □ □ □ □ □ ]</div>
+        </div>
+      </header>
+
+      <main class="terminal">
+        <div class="terminal-log" id="terminal-log" aria-live="polite"></div>
+      </main>
+
+      <section class="controls">
+        <div class="symbol-bar" id="symbol-bar">
+          <span class="symbol-label">Symbols:</span>
+        </div>
+        <form class="input-row" id="input-form" autocomplete="off">
+          <label class="prompt" for="command-input">&gt;</label>
+          <input
+            id="command-input"
+            class="command-input"
+            type="text"
+            placeholder="기호를 입력하세요 (예: ∀ ∃ ⇒)"
+            disabled
+          />
+          <button class="submit-button" type="submit" disabled>ENTER</button>
+        </form>
+      </section>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
