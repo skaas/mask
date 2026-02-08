@@ -15,6 +15,8 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="screen-noise" aria-hidden="true"></div>
+    <div class="screen-scanline" aria-hidden="true"></div>
     <div class="app">
       <header class="status-bar">
         <div class="status-left">
@@ -26,28 +28,76 @@
           <div class="status-item" id="clause-status">Clauses: 0 / 5</div>
           <div class="status-item" id="current-clause">Current: --</div>
           <div class="status-item" id="fragment-status">Fragments: [ □ □ □ □ □ ]</div>
+          <div class="status-item trace-status" id="trace-status">Trace: 02%</div>
         </div>
       </header>
 
       <main class="terminal">
-        <div class="terminal-log" id="terminal-log" aria-live="polite"></div>
+        <div class="terminal-workspace">
+          <div class="terminal-log" id="terminal-log" aria-live="polite"></div>
+          <section class="mission-overlay is-hidden" id="mission-overlay" aria-live="polite">
+            <div class="mission-overlay-head">
+              <span id="mission-clause">CLAUSE --</span>
+              <span id="mission-state">INTRUSION LOCK</span>
+            </div>
+            <div class="mission-overlay-title" id="mission-title">DECRYPTION REQUIRED</div>
+            <div class="mission-overlay-formula" id="mission-formula">--</div>
+            <div class="mission-overlay-copy" id="mission-copy">손상 블록 스캔 중...</div>
+            <div class="mission-overlay-tip" id="mission-tip">정확히 필요한 길이만 입력하세요.</div>
+            <div class="mission-log" id="mission-log" aria-live="polite"></div>
+            <div class="mission-symbols-wrap">
+              <div class="mission-symbols-title">SYMBOL KEYS</div>
+              <div class="mission-symbols" id="mission-symbols"></div>
+            </div>
+            <form class="mission-input-row" id="mission-input-form" autocomplete="off">
+              <label class="mission-prompt" for="mission-input">error@hyresis:block #</label>
+              <input
+                id="mission-input"
+                class="mission-input"
+                type="text"
+                placeholder="기호 2개 입력 (예: ⇒ ¬)"
+                disabled
+              />
+              <button class="mission-submit" type="submit" disabled>UNLOCK</button>
+            </form>
+          </section>
+          <aside class="tracker-panel" id="tracker-panel">
+            <div class="tracker-title">ACTIVE OBJECTIVE</div>
+            <div class="tracker-clause" id="tracker-clause">Clause --</div>
+            <div class="tracker-formula" id="tracker-formula">--</div>
+            <div class="tracker-reason" id="tracker-reason">문제가 로드되면 목표가 표시됩니다.</div>
+
+            <div class="tracker-block-title">ATTEMPT BOARD</div>
+            <div class="attempt-board" id="attempt-board"></div>
+
+            <div class="tracker-block-title">SYMBOL INTEL</div>
+            <div class="symbol-intel" id="symbol-intel"></div>
+          </aside>
+        </div>
       </main>
 
-      <section class="controls">
+      <section class="controls" id="controls-panel">
         <div class="symbol-bar" id="symbol-bar">
           <span class="symbol-label">Symbols:</span>
         </div>
         <form class="input-row" id="input-form" autocomplete="off">
-          <label class="prompt" for="command-input">&gt;</label>
+          <label class="prompt" for="command-input">root@hyresis:/will $</label>
           <input
             id="command-input"
             class="command-input"
             type="text"
-            placeholder="기호를 입력하세요 (예: ∀ ∃ ⇒)"
+            placeholder="sequence::symbols (예: ∀ ∃ ⇒)"
             disabled
           />
           <button class="submit-button" type="submit" disabled>ENTER</button>
         </form>
+        <aside class="symbol-palette" id="symbol-palette" aria-hidden="true">
+          <div class="symbol-palette-head">
+            기호 선택
+            <span class="symbol-palette-hint">↑↓ 이동 · Enter 선택</span>
+          </div>
+          <div class="symbol-palette-list" id="symbol-palette-list"></div>
+        </aside>
       </section>
     </div>
 
