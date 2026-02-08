@@ -137,6 +137,7 @@ body {
   margin-top: 8px;
   color: #eef3f8;
   font-size: 15px;
+  letter-spacing: 0.01em;
 }
 
 .mission-overlay-formula {
@@ -150,47 +151,58 @@ body {
   word-break: break-word;
 }
 
-.mission-overlay-copy {
-  margin-top: 10px;
-  color: #c5ccd5;
-  font-size: 13px;
-  line-height: 1.45;
+.mission-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  margin: 0 3px;
+  border: 1px solid #2f3741;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.mission-slot-locked {
+  border-color: #3f7f62;
+  background: #173326;
+  color: #93efbe;
+}
+
+.mission-slot-pending {
+  border-color: #7f6841;
+  background: #2e2616;
+  color: #f0d18d;
+}
+
+.mission-slot-empty {
+  border-color: #7a6642;
+  background: #2a2215;
+  color: #f0d18d;
 }
 
 .mission-overlay-tip {
   margin-top: 8px;
-  color: #f2c66d;
-  font-size: 12px;
-}
-
-.mission-log {
-  margin-top: 10px;
-  border: 1px solid #2d3742;
-  background: #0c131b;
-  padding: 8px;
-  max-height: 170px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 12px;
-}
-
-.mission-log-line {
-  line-height: 1.45;
   color: #aeb8c3;
-  white-space: pre-wrap;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  min-height: 18px;
 }
 
-.mission-log-line.mission-warn {
+.mission-overlay-tip.tip-default {
+  color: #aeb8c3;
+}
+
+.mission-overlay-tip.tip-warn {
   color: #f2c66d;
 }
 
-.mission-log-line.mission-good {
+.mission-overlay-tip.tip-good {
   color: #8fe3a8;
 }
 
-.mission-log-line.mission-bad {
+.mission-overlay-tip.tip-bad {
   color: #f38b7c;
 }
 
@@ -255,6 +267,14 @@ body {
   color: #8ef0bd;
   font-size: 12px;
   white-space: nowrap;
+  position: relative;
+}
+
+.mission-prompt::after {
+  content: "_";
+  margin-left: 4px;
+  color: #8ef0bd;
+  animation: mission-caret 1s step-end infinite;
 }
 
 .mission-input {
@@ -270,6 +290,7 @@ body {
 .mission-input:focus {
   outline: none;
   border-color: #4b5969;
+  box-shadow: 0 0 0 1px rgba(142, 240, 189, 0.35);
 }
 
 .mission-submit {
@@ -284,6 +305,12 @@ body {
 .mission-submit:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+@keyframes mission-caret {
+  50% {
+    opacity: 0;
+  }
 }
 
 .tracker-panel {
@@ -432,6 +459,11 @@ body {
 
 .log-success {
   color: var(--ok);
+}
+
+.log-transient-lock {
+  border-left: 2px solid #6a3d3b;
+  padding-left: 8px;
 }
 
 .controls {

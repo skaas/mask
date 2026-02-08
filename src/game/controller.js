@@ -14,12 +14,14 @@ export function createController(deps) {
   var canUseTerminalInput = deps.canUseTerminalInput;
   var isFormulaPuzzleClause = deps.isFormulaPuzzleClause;
   var getClauseSlotCount = deps.getClauseSlotCount;
+  var getRemainingFormulaSlotCount = deps.getRemainingFormulaSlotCount;
   var updateFormulaInputLine = deps.updateFormulaInputLine;
   var syncHistoryCursorToLatest = deps.syncHistoryCursorToLatest;
   var navigateHistory = deps.navigateHistory;
   var resetFormulaInput = deps.resetFormulaInput;
   var processUserInput = deps.processUserInput;
   var unlockGameplayFromOpening = deps.unlockGameplayFromOpening;
+  var activateQuizFromPending = deps.activateQuizFromPending;
   var handleSymbolInput = deps.handleSymbolInput;
 
   function handleMissionSymbolClick(clickEvent) {
@@ -38,16 +40,20 @@ export function createController(deps) {
   }
 
   function handleGlobalKeydown(keyEvent) {
-    if (state.phase !== FLOW_PHASE.WAIT_CONTINUE) {
-      return;
-    }
-
     if (keyEvent.key !== "Enter") {
       return;
     }
 
-    keyEvent.preventDefault();
-    unlockGameplayFromOpening();
+    if (state.phase === FLOW_PHASE.WAIT_CONTINUE) {
+      keyEvent.preventDefault();
+      unlockGameplayFromOpening();
+      return;
+    }
+
+    if (state.phase === FLOW_PHASE.QUIZ_PENDING) {
+      keyEvent.preventDefault();
+      activateQuizFromPending();
+    }
   }
 
   function handleInputFieldFocused() {
@@ -81,7 +87,7 @@ export function createController(deps) {
       return;
     }
 
-    var requiredLength = getClauseSlotCount(clause);
+    var requiredLength = getRemainingFormulaSlotCount(clause);
 
     if (state.currentSymbols.length >= requiredLength) {
       return;

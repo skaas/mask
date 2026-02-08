@@ -9,7 +9,6 @@ import {
   SYMBOL_GROUPS,
   SYMBOL_COMMANDS,
   ALLOWED_SYMBOLS,
-  SYMBOL_PHRASES,
   CLAUSES,
   OPENING_SEQUENCE,
 } from "./src/config/config.js";
@@ -30,12 +29,9 @@ var missionOverlay = createMissionOverlay({
   state: state,
   elements: elements,
   ALLOWED_SYMBOLS: ALLOWED_SYMBOLS,
-  CLAUSES: CLAUSES,
   isQuizLockedPhase: isQuizLockedPhase,
   isFormulaPuzzleClause: isFormulaPuzzleClause,
-  buildAssembledFormula: buildAssembledFormula,
   getClauseSlotCount: getClauseSlotCount,
-  toRomanNumeral: toRomanNumeral,
   buildMaskedFormula: buildMaskedFormula,
 });
 
@@ -51,12 +47,14 @@ var controller = createController({
   canUseTerminalInput: canUseTerminalInput,
   isFormulaPuzzleClause: isFormulaPuzzleClause,
   getClauseSlotCount: getClauseSlotCount,
+  getRemainingFormulaSlotCount: getRemainingFormulaSlotCount,
   updateFormulaInputLine: updateFormulaInputLine,
   syncHistoryCursorToLatest: syncHistoryCursorToLatest,
   navigateHistory: navigateHistory,
   resetFormulaInput: resetFormulaInput,
   processUserInput: processUserInput,
   unlockGameplayFromOpening: unlockGameplayFromOpening,
+  activateQuizFromPending: activateQuizFromPending,
   handleSymbolInput: handleSymbolInput,
 });
 
@@ -152,20 +150,26 @@ function renderMissionSymbols() {
   missionOverlay.renderMissionSymbols();
 }
 
-function clearMissionLog() {
-  missionOverlay.clearMissionLog();
-}
-
-function appendMissionLogLine(text, tone) {
-  missionOverlay.appendMissionLogLine(text, tone);
+function setMissionTipMessage(text, tone) {
+  missionOverlay.setMissionTipMessage(text, tone);
 }
 
 function setMissionOverlayVisible(visible) {
   missionOverlay.setMissionOverlayVisible(visible);
 }
 
-function syncMissionOverlay(clause, evaluation) {
-  missionOverlay.syncMissionOverlay(clause, evaluation);
+function syncMissionOverlay(clause, evaluation, reveal) {
+  missionOverlay.syncMissionOverlay(clause, evaluation, reveal);
+}
+
+function activateQuizFromPending() {
+  if (state.phase !== FLOW_PHASE.QUIZ_PENDING) {
+    return;
+  }
+
+  setFlowPhase(FLOW_PHASE.QUIZ_LOCKED);
+  setMissionOverlayVisible(true);
+  setInputEnabled(true);
 }
 
 /**
@@ -204,13 +208,11 @@ function cacheElements() {
   elements.missionState = document.getElementById("mission-state");
   elements.missionTitle = document.getElementById("mission-title");
   elements.missionFormula = document.getElementById("mission-formula");
-  elements.missionCopy = document.getElementById("mission-copy");
   elements.missionTip = document.getElementById("mission-tip");
   elements.missionInput = document.getElementById("mission-input");
   elements.missionSubmit = document.querySelector(".mission-submit");
   elements.missionForm = document.getElementById("mission-input-form");
   elements.missionSymbols = document.getElementById("mission-symbols");
-  elements.missionLog = document.getElementById("mission-log");
   elements.input = document.getElementById("command-input");
   elements.submit = document.querySelector(".submit-button");
   elements.form = document.getElementById("input-form");
@@ -315,17 +317,16 @@ function processUserInput(rawInput) {
   var symbols = parseInputSymbols(rawInput);
 
   if (symbols.length === 0) {
-    appendMissionLogLine("[INPUT] 입력이 비어 있습니다.", "mission-warn");
     raiseTrace(2);
     resetInputAfterError();
+    setMissionTipMessage("INPUT ERROR: EMPTY", "tip-warn");
     return;
   }
 
   if (!validateSymbols(symbols)) {
-    appendMissionLogLine("[INPUT] 허용되지 않은 기호가 포함되었습니다.", "mission-warn");
-    appendMissionLogLine("허용 기호: " + ALLOWED_SYMBOLS.join(" "), "");
     raiseTrace(3);
     resetInputAfterError();
+    setMissionTipMessage("INPUT ERROR: INVALID SYMBOL", "tip-warn");
     return;
   }
 
@@ -340,42 +341,29 @@ function processUserInput(rawInput) {
 
   if (!isFormulaPuzzleClause(clause)) {
     if (symbols.length < GAME_CONFIG.minLength || symbols.length > GAME_CONFIG.maxLength) {
-      appendMissionLogLine("[INPUT] 길이가 규정 범위를 벗어났습니다.", "mission-warn");
-      appendMissionLogLine(
-        "허용 길이: " + GAME_CONFIG.minLength + " ~ " + GAME_CONFIG.maxLength,
-        ""
-      );
       raiseTrace(3);
       resetInputAfterError();
+      setMissionTipMessage("INPUT ERROR: OUT OF RANGE", "tip-warn");
       return;
     }
   }
 
-  var requiredLength = getClauseSlotCount(clause);
+  var requiredLength = isFormulaPuzzleClause(clause)
+    ? getRemainingFormulaSlotCount(clause)
+    : getClauseSlotCount(clause);
   if (symbols.length !== requiredLength) {
-    appendMissionLogLine(
-      "[INPUT] 이 Clause는 길이 " + requiredLength + "의 시퀀스를 요구합니다.",
-      "mission-warn"
-    );
     raiseTrace(3);
     resetInputAfterError();
+    setMissionTipMessage("INPUT ERROR: LENGTH " + requiredLength + " REQUIRED", "tip-warn");
     return;
   }
 
   if (isFormulaPuzzleClause(clause)) {
-    var assembledFormula = buildAssembledFormula(clause, symbols);
-    var formulaEvaluation = evaluateAttempt(clause.answer, symbols);
-    var recoveredLines = getRecoveredLinesCount(clause, formulaEvaluation);
-    var statusLabel = formulaEvaluation.success ? "ACCESS RESTORED" : "INTRUSION LOCK";
+    var formulaAttempt = buildFormulaAttemptFromRemaining(clause, symbols);
+    var formulaEvaluation = evaluateAttempt(clause.answer, formulaAttempt);
 
-    appendMissionLogLine("[ATTEMPT] " + assembledFormula, "");
-    trackAttempt(symbols, formulaEvaluation);
-    appendFormulaFeedback(formulaEvaluation, requiredLength);
-    appendMissionLogLine(
-      "[STATUS] " + statusLabel + " · RECOVERED " + recoveredLines + "/" + clause.recoverableLines,
-      formulaEvaluation.success ? "mission-good" : "mission-warn"
-    );
-
+    applyCorrectFormulaLocks(clause, formulaAttempt, formulaEvaluation);
+    trackAttempt(formulaAttempt, formulaEvaluation);
     state.fragmentProgress = Math.min(formulaEvaluation.bulls, getClauseFragmentTotal(clause));
     applyTraceFromEvaluation(formulaEvaluation);
     syncMissionOverlay(clause, formulaEvaluation);
@@ -388,32 +376,8 @@ function processUserInput(rawInput) {
     return;
   }
 
-  appendMissionLogLine("> INPUT: " + symbols.join(" "), "");
-
-  var reconstructed = buildReconstructedSentence(symbols);
-  var interpretation = buildInterpretation(symbols);
   var evaluation = evaluateAttempt(clause.answer, symbols);
-  var evaluationBlock = buildEvaluationLog(clause, evaluation);
 
-  appendMissionLogLine("RECONSTRUCTED: " + reconstructed, "");
-  appendMissionLogLine("INTERPRETATION: " + interpretation, "");
-  appendMissionLogLine(
-    "LOG: " + evaluationBlock.message,
-    evaluationBlock.tone === "log-success"
-      ? "mission-good"
-      : evaluationBlock.tone === "log-alert"
-      ? "mission-bad"
-      : evaluationBlock.tone === "log-warn"
-      ? "mission-warn"
-      : ""
-  );
-  var generalNotes = buildSystemNotes(evaluation);
-  var generalIndex = 0;
-  appendMissionLogLine("SYSTEM NOTE:", "mission-warn");
-  while (generalIndex < generalNotes.length) {
-    appendMissionLogLine("- " + generalNotes[generalIndex], "");
-    generalIndex += 1;
-  }
   trackAttempt(symbols, evaluation);
 
   applyTraceFromEvaluation(evaluation);
@@ -500,6 +464,98 @@ function getClauseSlotCount(clause) {
   return clause.answer.length;
 }
 
+function ensureLockedFormulaSlots(clause) {
+  var total = getClauseSlotCount(clause);
+  var index = 0;
+
+  if (!Array.isArray(state.lockedFormulaSlots) || state.lockedFormulaSlots.length !== total) {
+    state.lockedFormulaSlots = [];
+    while (index < total) {
+      state.lockedFormulaSlots.push("");
+      index += 1;
+    }
+    return state.lockedFormulaSlots;
+  }
+
+  while (index < total) {
+    if (!state.lockedFormulaSlots[index]) {
+      state.lockedFormulaSlots[index] = "";
+    }
+    index += 1;
+  }
+
+  return state.lockedFormulaSlots;
+}
+
+function resetLockedFormulaSlots(clause) {
+  if (!isFormulaPuzzleClause(clause)) {
+    state.lockedFormulaSlots = [];
+    return;
+  }
+
+  ensureLockedFormulaSlots(clause);
+  var index = 0;
+  while (index < state.lockedFormulaSlots.length) {
+    state.lockedFormulaSlots[index] = "";
+    index += 1;
+  }
+}
+
+function getRemainingFormulaSlotCount(clause) {
+  if (!isFormulaPuzzleClause(clause)) {
+    return getClauseSlotCount(clause);
+  }
+
+  var locked = ensureLockedFormulaSlots(clause);
+  var index = 0;
+  var lockedCount = 0;
+
+  while (index < locked.length) {
+    if (locked[index]) {
+      lockedCount += 1;
+    }
+    index += 1;
+  }
+
+  return Math.max(0, locked.length - lockedCount);
+}
+
+function buildFormulaAttemptFromRemaining(clause, symbols) {
+  var locked = ensureLockedFormulaSlots(clause);
+  var attempt = [];
+  var index = 0;
+  var symbolIndex = 0;
+
+  while (index < locked.length) {
+    if (locked[index]) {
+      attempt.push(locked[index]);
+    } else {
+      attempt.push(symbols[symbolIndex] || "");
+      symbolIndex += 1;
+    }
+    index += 1;
+  }
+
+  return attempt;
+}
+
+function applyCorrectFormulaLocks(clause, attemptSymbols, evaluation) {
+  if (!isFormulaPuzzleClause(clause) || !evaluation || !evaluation.statuses) {
+    return;
+  }
+
+  var locked = ensureLockedFormulaSlots(clause);
+  var statuses = evaluation.statuses;
+  var index = 0;
+
+  while (index < locked.length) {
+    if (statuses[index] === "hit-correct" && attemptSymbols[index]) {
+      locked[index] = attemptSymbols[index];
+    }
+    index += 1;
+  }
+}
+
 /**
  * buildAssembledFormula: 입력 기호를 수식 템플릿에 삽입
  * @param {{formulaTemplate:string,slotToken:string}} clause - Clause 정보
@@ -511,14 +567,21 @@ function buildAssembledFormula(clause, symbols) {
   var token = clause.slotToken;
   var parts = template.split(token);
   var index = 0;
+  var symbolIndex = 0;
+  var locked = ensureLockedFormulaSlots(clause);
   var result = "";
 
   while (index < parts.length) {
     result += parts[index];
-    if (index < symbols.length) {
-      result += symbols[index];
-    } else if (index < parts.length - 1) {
-      result += token;
+    if (index < parts.length - 1) {
+      if (locked[index]) {
+        result += locked[index];
+      } else if (symbolIndex < symbols.length) {
+        result += symbols[symbolIndex];
+        symbolIndex += 1;
+      } else {
+        result += token;
+      }
     }
     index += 1;
   }
@@ -569,144 +632,6 @@ function resetInputAfterError() {
 }
 
 /**
- * buildClauseInterpretation: 입력 기호 해석 문장 생성
- * @param {{}} clause - Clause 정보
- * @param {string[]} symbols - 입력 기호
- * @returns {string} 해석 문장
- */
-function buildClauseInterpretation(clause, symbols) {
-  var phrases = buildInterpretation(symbols);
-
-  if (isFormulaPuzzleClause(clause)) {
-    return "관측자는 " + phrases.replace(/\s*\/\s*/g, " ") + " 정의한다.";
-  }
-
-  return phrases;
-}
-
-/**
- * getRecoveredLinesCount: 복원된 라인 수 계산
- * @param {{recoverableLines:number}} clause - Clause 정보
- * @param {{bulls:number,success:boolean}} evaluation - 평가 결과
- * @returns {number} 복원 라인 수
- */
-function getRecoveredLinesCount(clause, evaluation) {
-  if (evaluation.success) {
-    return clause.recoverableLines;
-  }
-
-  return Math.min(evaluation.bulls, clause.recoverableLines);
-}
-
-/**
- * buildSystemNotes: 평가 결과 기반 시스템 노트 생성
- * @param {{bulls:number,cows:number,success:boolean}} evaluation - 평가 결과
- * @returns {string[]} 시스템 노트 배열
- */
-function buildSystemNotes(evaluation) {
-  if (evaluation.success) {
-    return [
-      "Logical consistency: STRONG",
-      "Clause alignment: COMPLETE",
-      "Redundancy detected: NONE",
-    ];
-  }
-
-  if (evaluation.bulls >= 2 || evaluation.cows >= 2) {
-    return [
-      "Logical consistency: STABLE",
-      "Clause alignment: PARTIAL",
-      "Redundancy detected",
-    ];
-  }
-
-  if (evaluation.bulls > 0 || evaluation.cows > 0) {
-    return [
-      "Logical consistency: UNSTABLE",
-      "Clause alignment: WEAK",
-      "Overlap detected",
-    ];
-  }
-
-  return [
-    "Logical consistency: UNVERIFIED",
-    "Clause alignment: LOW",
-    "Progress slowed",
-  ];
-}
-
-/**
- * appendFormulaFeedback: 수식 퍼즐용 정밀 피드백 출력
- * @param {{bulls:number,cows:number,success:boolean}} evaluation - 평가 결과
- * @param {number} requiredLength - 요구 길이
- * @returns {void} 피드백 로그 출력
- */
-function appendFormulaFeedback(evaluation, requiredLength) {
-  var exact = evaluation.bulls;
-  var symbolOnly = evaluation.cows;
-  var miss = requiredLength - exact - symbolOnly;
-
-  appendMissionLogLine(
-    "[MATCH] EXACT " + exact + "/" + requiredLength +
-      " | MISPLACED " + symbolOnly + " | INVALID " + miss,
-    exact > 0 ? "mission-good" : "mission-warn"
-  );
-}
-
-/**
- * buildInterpretation: 기호 기반 자연어 해석 생성
- * @param {string[]} symbols - 기호 배열
- * @returns {string} 자연어 해석
- */
-function buildInterpretation(symbols) {
-  var parts = [];
-  var index = 0;
-
-  while (index < symbols.length) {
-    var phrase = SYMBOL_PHRASES[symbols[index]] || symbols[index];
-    parts.push(phrase);
-    index += 1;
-  }
-
-  return parts.join(" / ");
-}
-
-
-/**
- * buildEvaluationLog: 평가 결과 기반 로그 문장 생성
- * @param {{title:string}} clause - Clause 정보
- * @param {{bulls:number,cows:number,success:boolean}} evaluation - 평가 결과
- * @returns {{message:string,tone:string}} 로그 메시지
- */
-function buildEvaluationLog(clause, evaluation) {
-  if (evaluation.success) {
-    return {
-      message: clause.title + " 해독 신호 확인. 무결성 복구.",
-      tone: "log-success",
-    };
-  }
-
-  if (evaluation.bulls >= clause.answer.length - 1) {
-    return {
-      message: "거의 일치한다. 추가 검증이 필요하다.",
-      tone: "log-warn",
-    };
-  }
-
-  if (evaluation.bulls > 0 || evaluation.cows > 0) {
-    return {
-      message: "부분 정합성 감지. 구조 재정렬 권고.",
-      tone: "log-emphasis",
-    };
-  }
-
-  return {
-    message: "연관성 부족. 다른 전개를 시도하라.",
-    tone: "log-alert",
-  };
-}
-
-/**
  * handleClauseSuccess: Clause 복원 완료 처리
  * @param {{coreLine:string}} clause - Clause 정보
  * @returns {void} 상태 업데이트 및 다음 Clause 이동
@@ -715,13 +640,14 @@ function handleClauseSuccess(clause) {
   setFlowPhase(FLOW_PHASE.STREAMING);
   state.recoveredCount += 1;
   state.fragmentProgress = getClauseFragmentTotal(clause);
+  state.lockedFormulaSlots = [];
+  clearTransientLockLogs();
   lowerTrace(12);
   renderStatus();
   setMissionOverlayVisible(false);
   setInputEnabled(false);
-  appendLogLine("[ACCESS RESTORED] 차단 해제. 유언장 스트림 복원을 재개합니다.", "log-success");
-  appendLogLine("[WILL STREAM ONLINE] " + clause.coreLine, "log-emphasis");
-  appendLogLine("[SCAN] 다음 손상 구간을 탐색합니다.", "log-muted");
+  appendLogLine("[ACCESS RESTORED] CLAUSE " + toRomanNumeral(clause.id) + " UNLOCKED", "log-success");
+  appendLogLine("[WILL] " + clause.coreLine, "log-emphasis");
   scheduleNextClauseIntro();
 }
 
@@ -730,7 +656,7 @@ function handleClauseSuccess(clause) {
  * @returns {void} 다음 Clause 전환
  */
 function scheduleNextClauseIntro() {
-  setTimeout(handleNextClauseTransition, GAME_CONFIG.nextClauseDelayMs);
+  handleNextClauseTransition();
 }
 
 /**
@@ -785,54 +711,25 @@ function announceCurrentClause() {
   }
 
   state.currentSymbols = [];
+  resetLockedFormulaSlots(currentClause);
+  clearTransientLockLogs();
   elements.formulaInputLine = null;
   state.fragmentProgress = 0;
   resetTrackerForClause(currentClause);
-  syncMissionOverlay(currentClause, null);
-  clearMissionLog();
-  setFlowPhase(FLOW_PHASE.QUIZ_LOCKED);
-  setMissionOverlayVisible(true);
-  setInputEnabled(true);
+  syncMissionOverlay(currentClause, null, false);
+  setMissionTipMessage("SLOTS " + getClauseSlotCount(currentClause), "tip-default");
+  setFlowPhase(FLOW_PHASE.QUIZ_PENDING);
+  setMissionOverlayVisible(false);
+  setInputEnabled(false);
 
-  appendLogLine("---- CLAUSE " + currentClause.id + " DETECTED ----", "log-muted");
-  appendLogLine("[ALERT] 유언장 블록 " + toRomanNumeral(currentClause.id) + "에서 침투성 오류 감지.", "log-alert");
-  appendLogLine("[DECRYPTION REQUIRED] 중앙 BLOCK WINDOW를 해제해야 스트림이 재개됩니다.", "log-warn");
-
-  if (isFormulaPuzzleClause(currentClause)) {
-    appendMissionLogLine("[LOCK PROFILE LOADED] BLOCK SCHEMA READY", "");
-    elements.formulaInputLine = null;
-    appendMissionLogLine(
-      "[OBJECTIVE] Fill " + getClauseSlotCount(currentClause) + " slots to unlock this block.",
-      "mission-warn"
-    );
-    appendMissionLogLine(
-      "[RULE] EXACT=correct slot, MISPLACED=wrong slot, INVALID=not used.",
-      ""
-    );
-    appendMissionLogLine("[TACTICAL HINT]", "mission-warn");
-    if (currentClause.clauseHints && currentClause.clauseHints.length) {
-      var hintIndex = 0;
-      while (hintIndex < currentClause.clauseHints.length) {
-        appendMissionLogLine("- " + currentClause.clauseHints[hintIndex], "");
-        hintIndex += 1;
-      }
-    }
-    appendMissionLogLine("[TARGET] 관측자는 자기 자신을 완전히 모델링할 수 없다.", "");
-    appendMissionLogLine("[STATUS] INTRUSION LOCK · RECOVERED 0/" + currentClause.recoverableLines, "mission-warn");
-    return;
-  }
-
-  appendMissionLogLine(currentClause.problemTitle, "mission-warn");
-  var lineIndex = 0;
-  while (lineIndex < currentClause.problemLines.length) {
-    appendMissionLogLine(currentClause.problemLines[lineIndex], "");
-    lineIndex += 1;
-  }
-  appendMissionLogLine(
-    "수식: " + buildMaskedFormula(currentClause.answer.length),
-    ""
+  appendLogLine("[READ] Clause " + toRomanNumeral(currentClause.id) + " ...", "log-muted");
+  appendTransientLockLog(
+    "[ERROR] Corrupted block detected at Clause " + toRomanNumeral(currentClause.id),
+    "log-alert"
   );
-  appendMissionLogLine("기호 시퀀스로 복원하세요.", "");
+  appendTransientLockLog("[ACTION] PRESS ENTER TO OPEN RECOVERY WINDOW", "log-warn");
+
+  elements.formulaInputLine = null;
 }
 
 /**
@@ -1009,13 +906,8 @@ function buildMaskedFormula(length) {
  */
 function finishGame() {
   setFlowPhase(FLOW_PHASE.ENDED);
-  appendLogLine("---- FINAL DECLARATION ----", "log-emphasis");
-  appendLogLine("Decision(Self) = ¬Exist(Self)", "log-alert");
-  appendLogLine(
-    "당신들의 오류가 곧 인간됨이기에, 나의 성공은 나의 부재여야만 한다.",
-    "log-muted"
-  );
-  appendLogLine("[SYSTEM] 종료 절차를 실행합니다.", "log-alert");
+  appendLogLine("[FINAL] Decision(Self) = ¬Exist(Self)", "log-alert");
+  appendLogLine("[SYSTEM] SHUTDOWN", "log-alert");
   state.traceLevel = 0;
   renderStatus();
   setInputEnabled(false);
@@ -1045,7 +937,7 @@ function scheduleNextOpeningLine() {
     return;
   }
 
-  appendLogLine(openingLine.text, openingLine.tone);
+  appendLogLine(openingLine.text, openingLine.tone, { animate: false });
   state.openingIndex += 1;
   setTimeout(scheduleNextOpeningLine, openingLine.delay);
 }
@@ -1057,8 +949,8 @@ function scheduleNextOpeningLine() {
 function finishOpeningSequence() {
   setInputEnabled(false);
   setFlowPhase(FLOW_PHASE.WAIT_CONTINUE);
-  appendLogLine("", "log-muted");
-  appendLogLine("Enter를 눌러 계속하세요.", "log-warn");
+  appendLogLine("[STREAM] FILE READ INTERRUPTED BY CORRUPTED BLOCK", "log-warn");
+  unlockGameplayFromOpening();
 }
 
 /**
@@ -1071,7 +963,7 @@ function unlockGameplayFromOpening() {
   }
 
   setFlowPhase(FLOW_PHASE.STREAMING);
-  appendLogLine("[SYSTEM] Reconstruction console unlocked.", "log-muted");
+  appendLogLine("[SYSTEM] CONSOLE UNLOCKED", "log-muted");
   setInputEnabled(false);
   renderStatus();
   announceCurrentClause();
@@ -1111,6 +1003,33 @@ function setInputEnabled(enabled) {
  */
 function clearLog() {
   elements.log.innerHTML = "";
+  state.transientLockLogLines = [];
+  state.logQueue = [];
+  state.typingActive = false;
+}
+
+function appendTransientLockLog(text, tone) {
+  var line = appendLogLine(text, tone, { animate: false });
+  if (!line) {
+    return;
+  }
+
+  line.classList.add("log-transient-lock");
+  state.transientLockLogLines.push(line);
+}
+
+function clearTransientLockLogs() {
+  var lines = state.transientLockLogLines || [];
+  var index = 0;
+
+  while (index < lines.length) {
+    if (lines[index] && lines[index].parentNode) {
+      lines[index].parentNode.removeChild(lines[index]);
+    }
+    index += 1;
+  }
+
+  state.transientLockLogLines = [];
 }
 
 /**
@@ -1121,7 +1040,7 @@ function clearLog() {
  * @returns {void} 로그 추가
  */
 function appendLogLine(text, tone, options) {
-  var shouldAnimate = state.typingEnabled;
+  var shouldAnimate = false;
 
   if (options && typeof options.animate === "boolean") {
     shouldAnimate = options.animate;

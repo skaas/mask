@@ -6,13 +6,64 @@ export function createMissionOverlay(deps) {
   var state = deps.state;
   var elements = deps.elements;
   var ALLOWED_SYMBOLS = deps.ALLOWED_SYMBOLS;
-  var CLAUSES = deps.CLAUSES;
   var isQuizLockedPhase = deps.isQuizLockedPhase;
   var isFormulaPuzzleClause = deps.isFormulaPuzzleClause;
-  var buildAssembledFormula = deps.buildAssembledFormula;
   var getClauseSlotCount = deps.getClauseSlotCount;
-  var toRomanNumeral = deps.toRomanNumeral;
   var buildMaskedFormula = deps.buildMaskedFormula;
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function getLockedCount(clause) {
+    if (!isFormulaPuzzleClause(clause)) {
+      return 0;
+    }
+
+    var locked = state.lockedFormulaSlots || [];
+    var total = getClauseSlotCount(clause);
+    var index = 0;
+    var count = 0;
+
+    while (index < total) {
+      if (locked[index]) {
+        count += 1;
+      }
+      index += 1;
+    }
+
+    return count;
+  }
+
+  function buildFormulaMarkup(clause) {
+    var template = clause.formulaTemplate;
+    var token = clause.slotToken;
+    var parts = template.split(token);
+    var locked = state.lockedFormulaSlots || [];
+    var pending = state.currentSymbols || [];
+    var pendingIndex = 0;
+    var slotIndex = 0;
+    var html = "";
+
+    html += escapeHtml(parts[0] || "");
+    while (slotIndex < parts.length - 1) {
+      if (locked[slotIndex]) {
+        html += '<span class="mission-slot mission-slot-locked">' + escapeHtml(locked[slotIndex]) + "</span>";
+      } else if (pendingIndex < pending.length) {
+        html += '<span class="mission-slot mission-slot-pending">' + escapeHtml(pending[pendingIndex]) + "</span>";
+        pendingIndex += 1;
+      } else {
+        html += '<span class="mission-slot mission-slot-empty">□</span>';
+      }
+      html += escapeHtml(parts[slotIndex + 1] || "");
+      slotIndex += 1;
+    }
+
+    return html;
+  }
 
   function renderMissionSymbols() {
     if (!elements.missionSymbols) {
@@ -36,23 +87,14 @@ export function createMissionOverlay(deps) {
     }
   }
 
-  function clearMissionLog() {
-    if (!elements.missionLog) {
-      return;
-    }
-    elements.missionLog.innerHTML = "";
-  }
-
-  function appendMissionLogLine(text, tone) {
-    if (!elements.missionLog) {
+  function setMissionTipMessage(text, tone) {
+    if (!elements.missionTip) {
       return;
     }
 
-    var line = document.createElement("div");
-    line.className = "mission-log-line" + (tone ? " " + tone : "");
-    line.textContent = text;
-    elements.missionLog.appendChild(line);
-    elements.missionLog.scrollTop = elements.missionLog.scrollHeight;
+    elements.missionTip.textContent = text || "";
+    elements.missionTip.classList.remove("tip-default", "tip-warn", "tip-good", "tip-bad");
+    elements.missionTip.classList.add(tone || "tip-default");
   }
 
   function setMissionOverlayVisible(visible) {
@@ -77,61 +119,76 @@ export function createMissionOverlay(deps) {
     }
   }
 
-  function syncMissionOverlay(clause, evaluation) {
+  function syncMissionOverlay(clause, evaluation, reveal) {
+    var shouldReveal = true;
+
+    if (typeof reveal === "boolean") {
+      shouldReveal = reveal;
+    }
+
     if (!clause) {
       setMissionOverlayVisible(false);
       return;
     }
 
     if (elements.missionClause) {
-      elements.missionClause.textContent =
-        "CLAUSE " + toRomanNumeral(clause.id) + " · QUIZ " + clause.id + "/" + CLAUSES.length;
+      elements.missionClause.textContent = "ERROR WINDOW";
     }
     if (elements.missionTitle) {
-      elements.missionTitle.textContent = "DECRYPTION REQUIRED · " + clause.title;
+      elements.missionTitle.textContent = clause.title;
     }
     if (elements.missionFormula) {
       if (isFormulaPuzzleClause(clause)) {
-        elements.missionFormula.textContent = buildAssembledFormula(clause, state.currentSymbols);
+        elements.missionFormula.innerHTML = buildFormulaMarkup(clause);
       } else {
         elements.missionFormula.textContent = "수식: " + buildMaskedFormula(clause.answer.length);
       }
-    }
-    if (elements.missionCopy) {
-      elements.missionCopy.textContent =
-        clause.problemLines && clause.problemLines[1]
-          ? clause.problemLines[1]
-          : "차단 해제 전까지 다음 유언장은 열리지 않습니다.";
     }
     if (elements.missionState) {
       elements.missionState.textContent =
         evaluation && evaluation.success ? "ACCESS RESTORED" : "INTRUSION LOCK";
       elements.missionState.style.color = evaluation && evaluation.success ? "#8fe3a8" : "#f2c66d";
     }
-    if (elements.missionTip) {
-      if (evaluation) {
-        elements.missionTip.textContent =
-          "자리+기호 " +
-          evaluation.bulls +
-          " / " +
-          getClauseSlotCount(clause) +
-          " · 기호만 일치 " +
-          evaluation.cows;
+    var totalSlots = getClauseSlotCount(clause);
+    var lockedCount = getLockedCount(clause);
+    var remainingSlots = Math.max(0, totalSlots - lockedCount);
+
+    if (elements.missionInput) {
+      elements.missionInput.placeholder =
+        "남은 기호 " + remainingSlots + "개 입력 (예: ⇒ ¬)";
+    }
+    if (evaluation) {
+      if (evaluation.success) {
+        setMissionTipMessage("모든 슬롯 고정 완료 · ACCESS RESTORED", "tip-good");
       } else {
-        elements.missionTip.textContent =
-          "INTRUSION LOCK 상태에서는 창이 닫히지 않습니다. 빈칸 " +
-          getClauseSlotCount(clause) +
-          "개를 기호로 채우세요.";
+        var invalid = Math.max(0, totalSlots - evaluation.bulls - evaluation.cows);
+        var remainHint = remainingSlots === 1 ? " · 남은 1칸만 맞추면 됩니다." : "";
+        setMissionTipMessage(
+          "EXACT " + evaluation.bulls +
+            " · MISPLACED " + evaluation.cows +
+            " · INVALID " + invalid +
+            " · 고정 " + lockedCount + "칸 / 남은 " + remainingSlots + "칸" +
+            remainHint,
+          "tip-warn"
+        );
       }
+    } else if (lockedCount > 0) {
+      setMissionTipMessage(
+        "고정 " + lockedCount + "칸 · 남은 " + remainingSlots + "칸만 입력하세요.",
+        "tip-default"
+      );
+    } else {
+      setMissionTipMessage("SLOTS " + totalSlots, "tip-default");
     }
 
-    setMissionOverlayVisible(true);
+    if (shouldReveal) {
+      setMissionOverlayVisible(true);
+    }
   }
 
   return {
     renderMissionSymbols: renderMissionSymbols,
-    clearMissionLog: clearMissionLog,
-    appendMissionLogLine: appendMissionLogLine,
+    setMissionTipMessage: setMissionTipMessage,
     setMissionOverlayVisible: setMissionOverlayVisible,
     syncMissionOverlay: syncMissionOverlay,
   };

@@ -4,6 +4,7 @@ export const FLOW_PHASE = {
   OPENING: "OPENING",
   WAIT_CONTINUE: "WAIT_CONTINUE",
   STREAMING: "STREAMING",
+  QUIZ_PENDING: "QUIZ_PENDING",
   QUIZ_LOCKED: "QUIZ_LOCKED",
   ENDED: "ENDED",
 };
@@ -14,6 +15,7 @@ export const state = {
   openingIndex: 0,
   inputEnabled: false,
   currentSymbols: [],
+  lockedFormulaSlots: [],
   logQueue: [],
   typingActive: false,
   typingEnabled: GAME_CONFIG.typingEnabled,
@@ -28,6 +30,7 @@ export const state = {
   trackerAttempts: [],
   symbolIntel: {},
   missionVisible: false,
+  transientLockLogLines: [],
 };
 
 export const elements = {
@@ -50,13 +53,11 @@ export const elements = {
   missionState: null,
   missionTitle: null,
   missionFormula: null,
-  missionCopy: null,
   missionTip: null,
   missionInput: null,
   missionSubmit: null,
   missionForm: null,
   missionSymbols: null,
-  missionLog: null,
   input: null,
   submit: null,
   form: null,
